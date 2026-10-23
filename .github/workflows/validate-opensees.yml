@@ -1,0 +1,61 @@
+name: FootingsEC7 - OpenSeesPy real and regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'footingsec7/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'requirements*.txt'
+  pull_request:
+    paths:
+      - 'footingsec7/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'requirements*.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    env:
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install runtime and tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-opensees-optional.txt
+          python -m pip install pytest scipy
+          python -c "import openseespy.opensees as o; print('OpenSeesPy:',o.version())"
+      - name: Full test suite (includes real OpenSees)
+        run: |
+          mkdir -p artifacts
+          python -m pytest -q --junitxml=artifacts/pytest-results.xml
+      - name: Independent elementary beam benchmark
+        run: python tools/validate_opensees_runtime.py --output artifacts/opensees_beam_reference.json
+      - name: Coupled 3D contact and mesh verification
+        run: python tools/validate_coupled_runtime.py --output artifacts/opensees_coupled_reference.json
+      - name: Upload validation records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: footings-ec7-py${{ matrix.python-version }}-validation
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
